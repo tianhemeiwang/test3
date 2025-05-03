@@ -11,3 +11,4 @@ wordcloud
 scipy
 pycountry
 nltk
+tabulate
