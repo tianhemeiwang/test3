@@ -12,9 +12,15 @@ from wordcloud import WordCloud, STOPWORDS
 from scipy.interpolate import UnivariateSpline
 import re
 import pycountry
+import os
 
 import nltk
-nltk.data.path.append(os.path.join(os.path.dirname(__file__), "data", "corpora"))
+# Automatically download required corpora if missing
+for pkg in ['punkt', 'wordnet', 'brown', 'averaged_perceptron_tagger']:
+    try:
+        nltk.data.find(f"{'corpora' if pkg != 'averaged_perceptron_tagger' else 'taggers'}/{pkg}")
+    except LookupError:
+        nltk.download(pkg)
 
 import warnings
 warnings.filterwarnings("ignore")
