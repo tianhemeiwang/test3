@@ -6,6 +6,15 @@ from datetime import datetime, timedelta
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 from textblob import TextBlob  # Import TextBlob for sentiment analysis
+from textblob import download_corpora
+
+try:
+    # TextBlob requires this for POS tagging
+    _ = TextBlob("test").tags
+except Exception:
+    download_corpora()
+
+
 import geopandas as gpd
 import plotly.express as px
 from wordcloud import WordCloud, STOPWORDS
