@@ -6,13 +6,8 @@ from datetime import datetime, timedelta
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 from textblob import TextBlob  # Import TextBlob for sentiment analysis
-from textblob import download_corpora
-
-try:
-    # TextBlob requires this for POS tagging
-    _ = TextBlob("test").tags
-except Exception:
-    download_corpora()
+import textblob.download_corpora as textblob_data
+textblob_data.download_all()
 
 
 import geopandas as gpd
