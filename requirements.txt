@@ -9,3 +9,5 @@ geopandas
 plotly
 wordcloud
 scipy
+pycountry
+nltk

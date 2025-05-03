@@ -1,3 +1,4 @@
+# --- Imports ---
 import feedparser
 import pandas as pd
 import streamlit as st
@@ -7,697 +8,553 @@ import matplotlib.pyplot as plt
 from textblob import TextBlob  # Import TextBlob for sentiment analysis
 import geopandas as gpd
 import plotly.express as px
-from wordcloud import WordCloud
+from wordcloud import WordCloud, STOPWORDS
 from scipy.interpolate import UnivariateSpline
 import re
+import pycountry
 
-# Define top 3 news sources for each country
+import nltk
+nltk.data.path.append(os.path.join(os.path.dirname(__file__), "data", "corpora"))
+
+import warnings
+warnings.filterwarnings("ignore")
+
+# --- Function definition ---
+## Define top 3 news sources for each country
 country_sources = {
-    'United States': ['cnn.com', 'nytimes.com', 'reuters.com'],
-    'United Kingdom': ['bbc.com', 'theguardian.com', 'telegraph.co.uk'],
-    'Germany': ['faz.net', 'spiegel.de', 'deutschewelle.com'],
-    'France': ['lemonde.fr', 'france24.com', 'lefigaro.fr'],
-    'India': ['thehindu.com', 'timesofindia.indiatimes.com', 'ndtv.com'],
-    'Australia': ['abc.com.au', 'theage.com.au', 'smh.com.au'],
-    'Canada': ['cbc.ca', 'globesandmail.com', 'torontostar.com'],
-    'Brazil': ['globo.com', 'estadão.com.br', 'folha.uol.com.br'],
-    'Russia': ['rt.com', 'ria.ru', 'sovietnews.net'],
-    'Spain': ['elpais.com', 'abc.es', 'marca.com'],
+    'United States': ['reuters.com', 'bloomberg.com', 'nytimes.com'],
+    'United Kingdom': ['bbc.com', 'theguardian.com', 'ft.com'],
+    'Germany': ['faz.net', 'spiegel.de', 'handelsblatt.com'],
+    'France': ['lemonde.fr', 'lesechos.fr'],
+    'India': ['thehindu.com', 'business-standard.com'],
+    'Australia': ['abc.net.au', 'afr.com'],
+    'Canada': ['cbc.ca', 'financialpost.com'],
+    'Brazil': ['globo.com', 'valor.globo.com'],
+    'Russia': ['rt.com', 'ria.ru', 'vedomosti.ru'],
+    'Spain': ['elpais.com', 'expansion.com', 'abc.es'],
     'Mexico': ['eluniversal.com.mx', 'milenio.com', 'reforma.com'],
-    'Japan': ['japantimes.co.jp', 'nhk.or.jp', 'asahi.com'],
-    'South Korea': ['koreaherald.com', 'chosun.com', 'joongang.co.kr'],
-    'Italy': ['corriere.it', 'repubblica.it', 'ilmessaggero.it'],
-    'China': ['china.org.cn', 'scmp.com', 'globaltimes.cn'],
-    'South Africa': ['timeslive.co.za', 'sabcnews.com', 'news24.com'],
-    'Egypt': ['almasryalyoum.com', 'egyptindependent.com', 'dailynewsegypt.com'],
-    'United Arab Emirates': ['thenationalnews.com', 'khaleejtimes.com', 'gulfnews.com'],
-    'Saudi Arabia': ['arabnews.com', 'saudigovt.com', 'alriyadh.com'],
-    'Turkey': ['hurriyet.com.tr', 'milliyet.com.tr', 'sozcu.com.tr'],
-    'Indonesia': ['jakartapost.com', 'thejakartaglobe.com', 'tempo.co.id'],
-    'Argentina': ['clarin.com', 'infobae.com', 'lanacion.com.ar'],
-    'Nigeria': ['punchng.com', 'theguardian.ng', 'vanguardngr.com'],
-    'Pakistan': ['dawn.com', 'tribune.com.pk', 'thenews.com.pk'],
-    'Colombia': ['eltiempo.com', 'elnuevodia.com.co', 'colombiareports.com'],
-    'Chile': ['emol.com', 'latercera.com', 'biobiochile.cl'],
-    'Vietnam': ['vietnamnet.vn', 'tuoitrenews.vn', 'dantri.com.vn'],
-    'Philippines': ['rappler.com', 'abs-cbn.com', 'philstar.com'],
-    'Thailand': ['bangkokpost.com', 'nationthailand.com', 'thaipbsworld.com'],
-    'Malaysia': ['theedgemarkets.com', 'malaysiakini.com', 'thestar.com.my'],
-    'Singapore': ['straitstimes.com', 'todayonline.com', 'channelnewsasia.com'],
-    'New Zealand': ['stuff.co.nz', 'nzherald.co.nz', 'tvnz.co.nz'],
-    'Belgium': ['lecho.be', 'rtbf.be', 'demorgen.be'],
-    'Netherlands': ['nos.nl', 'telegraaf.nl', 'fd.nl'],
-    'Sweden': ['svt.se', 'aftonbladet.se', 'expressen.se'],
-    'Finland': ['yle.fi', 'hs.fi', 'ilta-sanomat.fi'],
-    'Norway': ['nrk.no', 'vg.no', 'aftenposten.no'],
-    'Denmark': ['dr.dk', 'berlingske.dk', 'jyllands-posten.dk']
+    'Japan': ['japantimes.co.jp', 'nhk.or.jp'],
+    'South Korea': ['koreaherald.com', 'koreatimes.co.kr'],
+    'Italy': ['corriere.it', 'repubblica.it', 'sole24ore.com'],
+    'China': ['scmp.com', 'china.org.cn'],
+    'South Africa': ['news24.com', 'businesslive.co.za'],
+    'Egypt': ['egyptindependent.com', 'dailynewsegypt.com'],
+    'United Arab Emirates': ['thenationalnews.com', 'gulfnews.com'],
+    'Saudi Arabia': ['arabnews.com', 'saudigazette.com.sa'],
+    'Turkey': ['hurriyet.com.tr', 'dunya.com'],
+    'Indonesia': ['jakartapost.com', 'tempo.co.id'],
+    'Argentina': ['clarin.com', 'lanacion.com.ar'],
+    'Nigeria': ['theguardian.ng', 'businessday.ng'],
+    'Pakistan': ['dawn.com', 'thenews.com.pk'],
+    'Colombia': ['eltiempo.com', 'portafolio.co'],
+    'Chile': ['latercera.com', 'emol.com'],
+    'Vietnam': ['vietnamnet.vn', 'tuoitrenews.vn'],
+    'Philippines': ['rappler.com', 'philstar.com'],
+    'Thailand': ['bangkokpost.com', 'nationthailand.com'],
+    'Malaysia': ['malaysiakini.com', 'thestar.com.my'],
+    'Singapore': ['straitstimes.com', 'channelnewsasia.com'],
+    'New Zealand': ['stuff.co.nz', 'nzherald.co.nz'],
+    'Belgium': ['lecho.be', 'rtbf.be'],
+    'Netherlands': ['nos.nl', 'fd.nl'],
+    'Sweden': ['svt.se', 'di.se'],
+    'Finland': ['yle.fi', 'hs.fi'],
+    'Norway': ['nrk.no', 'aftenposten.no'],
+    'Denmark': ['dr.dk', 'berlingske.dk']
 }
 
-# DEFINE FUNCTION TO FETCH NEWS
-def fetch_bayer_articles_from_source(source_url, country):
-    url = f"https://news.google.com/news/rss/search/section/q/Bayer+{source_url}/{source_url}?hl=en"
-    feed = feedparser.parse(url)
-    articles = []
+if 'df' not in st.session_state:
+    st.session_state.df = pd.DataFrame()
+
+## --- Fetch news ---
+# 🔍 Targeted search query
+base_query = (
+    'intitle:"Bayer" (pharma OR Monsanto OR agriculture OR chemical OR crop OR ESG OR lawsuit) '
+    '-football -soccer -Leverkusen -match -team -bundesliga'
+)
+
+# 🌐 Build global feed URLs using your country_sources
+def build_global_feed_urls(country_sources):
+    query_encoded = base_query.replace(" ", "%20")
+    feed_urls = []
+
+    for country, sources in country_sources.items():
+        for source in sources:
+            url = f"https://news.google.com/rss/search?q={query_encoded}+site:{source}&hl=en"
+            feed_urls.append((country, url))
     
-    for entry in feed.entries:
-        published_date = entry.get('published', '')
-        try:
-            published_datetime = datetime.strptime(published_date, '%a, %d %b %Y %H:%M:%S %Z')
-        except ValueError:
-            continue
-        
-        if published_datetime.year >= 2025:
-            # Exclude football-related news based on title or summary
-            title = entry.get('title', '').lower()
-            summary = entry.get('summary', '').lower()
-            if "football" in title or "soccer" in title or "bayer 04" in title or "soccer" in summary:
-                continue  # Skip this article
-            
-            # Safely access Summary (use content or title if missing)
-            summary = entry.get('summary', entry.get('content', [{}])[0].get('value', entry.get('title', '')))
+    return feed_urls
 
-            article = {
-                'Title': entry.get('title', ''),
-                'Link': entry.get('link', ''),
-                'Published': published_date,
-                'Summary': summary,
-                'Authors': entry.get('author', ''),
-                'Tags': entry.get('tags', ''),
-                'Updated': entry.get('updated', ''),
-                'Content': entry.get('content', ''),
-                'Language': entry.get('language', ''),
-                'Source': entry.get('source', ''),
-                'ID': entry.get('id', ''),
-                'Country': country  # Add the country for each article
-            }
-            articles.append(article)
-    return articles
+def is_relevant_article(title, summary):
+        text = (title + ' ' + summary).lower()
+        sports_keywords = [
+            'bayer 04', 'leverkusen', 'football', 'soccer', 'bundesliga',
+            'match', 'goal', 'coach', 'team', 'player', 'transfer', 'cup',
+            'league', 'hertha', 'berlin', 'fc', 'striker','world cup'
+        ]
+        return not any(keyword in text for keyword in sports_keywords)
 
-# Function to calculate sentiment using TextBlob (returns sentiment score as a number)
+# 📥 Fetch all news articles for the specified time window
+def fetch_global_bayer_articles(start_date, country_sources):
+
+    articles = []
+
+    for country, sources in country_sources.items():
+        for source in sources:
+            url = f"https://news.google.com/rss/search?q=Bayer+site:{source}&hl=en"
+            try:
+                feed = feedparser.parse(url)
+
+                if not hasattr(feed, 'entries') or not feed.entries:
+                    #st.write(f"⚠️ No entries found for {source}")
+                    continue
+
+                for entry in feed.entries:
+                    published_date_raw = entry.get('published', '')
+                    try:
+                        published_datetime = datetime.strptime(published_date_raw, '%a, %d %b %Y %H:%M:%S %Z')
+                        published_date = published_datetime.date()
+                    except Exception as e:
+                        st.write(f"⚠️ Failed to parse published date: {published_date_raw} ({e})")
+                        continue
+
+                    if published_date < start_date:
+                        continue
+
+                    # Extract and lowercase title and summary
+                    title = entry.get('title', '')
+                    summary = entry.get('summary', entry.get('content', [{}])[0].get('value', title))
+
+                    title_lc = title.lower()
+                    summary_lc = summary.lower()
+
+                    # ✅ Require "bayer" in title or summary
+                    if "bayer" not in title_lc and "bayer" not in summary_lc:
+                        continue
+
+                    # ❌ Filter out sports, football, and common Bayer 04 terms
+                    skip_terms = ["bayer 04", "football", "soccer", "bundesliga", "leverkusen", "bayern"]
+                    if any(term in title_lc or term in summary_lc for term in skip_terms):
+                        continue
+
+                    articles.append({
+                        'Title': title,
+                        'Link': entry.get('link', ''),
+                        'Published': published_datetime.strftime('%a, %d %b %Y %H:%M:%S GMT'),
+                        'Summary': summary,
+                        'Source': entry.get('source', ''),
+                        'Country': country
+                    })
+
+            except Exception as e:
+                st.write(f"❌ Error parsing feed for {source}: {e}")
+                continue
+
+    # Create, clean, and sort DataFrame
+    df = pd.DataFrame(articles)
+    df["Published"] = pd.to_datetime(df["Published"], errors="coerce")
+    df = df.dropna(subset=["Published"])
+    df = df.sort_values("Published")
+
+    st.success(f"✅ {len(df)} articles loaded from {start_date} onward.")
+
+    return df
+
+
+
+def fetch_all_articles(start_date):
+    return fetch_global_bayer_articles(start_date, country_sources)
+
+def get_date_range():
+    if st.session_state.time_window == "Custom":
+        return st.session_state.custom_start, st.session_state.custom_end
+    days = int(re.findall(r'\d+', st.session_state.time_window)[0])
+    end = datetime.today().date()
+    start = end - timedelta(days=days)
+    return start, end
+
+## --- Calculate sentiment using TextBlob (returns sentiment score as a number) ---
 def get_sentiment(text):
     blob = TextBlob(text)
-    sentiment = blob.sentiment.polarity  # Sentiment polarity score (-1 to 1)
-    return round(sentiment, 2)  # Round to 2 decimal places
+    return round(blob.sentiment.polarity, 2)
 
-# Fetch Bayer-related articles from multiple countries
-articles_all = []
-for country, sources in country_sources.items():
-    for source in sources[:3]:  # Limit to 3 sources per country
-        articles_all.extend(fetch_bayer_articles_from_source(source, country))
-
-# Create DataFrame from fetched articles
-df = pd.DataFrame(articles_all)
-
-# st.write(df)
-
-###################### GOOD SO FAR
-
-
-# Create df_copy by copying df and retaining only the Title, Published, Source, Country columns
-df_copy = df[['Title', 'Published', 'Source', 'Country']].copy()
-
-# Format the Published column to remove weekday and time info (keep only the date)
-df_copy['Published'] = pd.to_datetime(df_copy['Published']).dt.strftime('%Y-%m-%d')
-
-# Extract URL from the 'Source' column
+## --- Extract URL from the 'Source' column ---
 def extract_url_from_source(source):
-    if isinstance(source, dict):  # Check if the source is a dictionary
-        return source.get('href', None)  # Return the 'href' value (URL)
-    return None  # If not a dictionary, return None
+    if isinstance(source, dict):
+        return source.get('href', None)
+    return None
 
-# Apply the function to the 'Source' column to extract the URLs
-df_copy['Source'] = df_copy['Source'].apply(extract_url_from_source)
+## --- Prep df_filtered used in Sentiment trend ---
+def prepare_df_filtered(df, time_window=None):
+    # Filter and transform df to df_filter
+    df_filtered = df[['Title', 'Published', 'Source', 'Country','Summary']].copy()
+    df_filtered['Published'] = pd.to_datetime(df_filtered['Published']).dt.strftime('%Y-%m-%d')
+    df_filtered['Source'] = df_filtered['Source'].apply(extract_url_from_source)
+    df_filtered['Sentiment'] = df_filtered.apply(
+        lambda row: get_sentiment(row.get('Summary', '')) if row.get('Summary', '') else get_sentiment(row['Title']),axis=1
+        )
+    df_filtered = df_filtered[["Title", "Published", "Source", "Country", "Sentiment"]]
+    return df_filtered
 
-# Safely calculate sentiment based on Summary, or fallback to Title if Summary is empty or NaN
-df_copy['Sentiment'] = df_copy.apply(
-    lambda row: get_sentiment(row.get('Summary', '')) if row.get('Summary', '') else get_sentiment(row['Title']),
-    axis=1
-)
+## --- Aggregate sentiment by country ---
+def aggregate_sentiment_by_country(df_filtered):
+    df_agg = df_filtered.groupby('Country').agg(
+        Nr_News=('Title', 'count'),
+        Avg_Sentiment=('Sentiment', 'mean')
+    ).reset_index()
+    df_agg['Avg_Sentiment'] = df_agg['Avg_Sentiment'].round(2)
+    return df_agg
 
-# st.write(df_copy)
+### --- Function stubs used in defining df_cloud ---
+def clean_text(text):
+    text = re.sub(r'<.*?>', '', text)  # Remove HTML tags
+    # Remove HTML entities (e.g., &nbsp;, &lt;, &gt;, etc.)
+    text = re.sub(r'&[a-zA-Z0-9#]+;', '', text)  # Remove HTML entities
+    # Remove non-alphabetic characters (keeping spaces and Chinese characters)
+    text = re.sub(r'[^a-zA-Z\s\u4e00-\u9fa5]', '', text)
+    # Convert to lowercase
+    text = text.lower()
+    # Remove specific irrelevant words (e.g., Bayer, Bayern, etc.)
+    unwanted_words = ['dortmund','chosunbizchosunbiz','title', 'says', 'sbnation', 'targetblank', 'font', 'nbsp', 'football', 'soccer', 'bayer', 'bayern','bayerns', 'bundesliga','leverkusen', 'munich','chosunbiz','mainz','could']
+    
+    return ' '.join([word for word in text.split() if word not in unwanted_words])
 
-####################################### GOOD SO FAR
+def process_text(text):
+    # Tokenize and POS tag
+    blob = TextBlob(text)
+    nouns = [word for word, tag in blob.tags if tag.startswith('NN')]
+    # Remove stopwords
+    nouns = [word for word in nouns if word not in STOPWORDS]
+    return ' '.join(nouns)
 
-# Check if 'selected_section' exists in session state, if not, initialize it to "Home"
-if 'selected_section' not in st.session_state:
-    st.session_state.selected_section = "Home"  # Default section
+## --- Prepare df_cloud for word cloud ---
+def prepare_wordcloud_df(df, start_date, end_date):
+    from datetime import datetime
 
-# Home button: Default content
-home_button = st.sidebar.button("Home", key="home_button")
-if home_button:
-    st.session_state.selected_section = "Home"  # Set section to Home when button is clicked
+    # Convert start_date and end_date to datetime for safe comparison
+    start_date = datetime.combine(start_date, datetime.min.time())
+    end_date = datetime.combine(end_date, datetime.max.time())
 
-# Set default dates
-date_filter_end = datetime.today()
-date_filter_start = datetime.today() - timedelta(days=7)
+    df_cloud = df.copy()
+    df_cloud['Published'] = pd.to_datetime(df_cloud['Published'])
 
-# Sentiment per country button
-sentiment_per_country_button = st.sidebar.button("Sentiment per country", key="sentiment_per_country")
-if sentiment_per_country_button:
-    st.session_state.selected_section = "Sentiment per country"
+    df_cloud = df_cloud[
+        (df_cloud['Published'] >= start_date) &
+        (df_cloud['Published'] <= end_date)
+    ]
 
-# Sentiment world map button
-sentiment_world_map_button = st.sidebar.button("Sentiment world map", key="sentiment_world_map")
-if sentiment_world_map_button:
-    st.session_state.selected_section = "Sentiment world map"
+    df_cloud['Cleaned_Summary'] = df_cloud['Summary'].apply(clean_text)
+    df_cloud['Processed_Summary'] = df_cloud['Cleaned_Summary'].apply(process_text)
 
-# Sentiment trend button
-sentiment_trend_button = st.sidebar.button("Sentiment trend", key="sentiment_trend")
-if sentiment_trend_button:
-    st.session_state.selected_section = "Sentiment trend"
+    return df_cloud
 
-# Word cloud button
-word_cloud_button = st.sidebar.button("Word cloud", key="word_cloud")
-if word_cloud_button:
-    st.session_state.selected_section = "Word cloud"
+# Helper to convert country names to ISO Alpha-3
+def get_country_code(name):
+    try:
+        return pycountry.countries.lookup(name).alpha_3
+    except LookupError:
+        return None
 
-time_window_option = st.sidebar.selectbox(
-    "Choose a time period for analysis",
-    options=["Last 7 days", "Last 30 days", "Last 90 days", "All Time", "Custom Date Range"]
-)
+def plot_world_map(df_agg):
+    # Add ISO Alpha-3 codes for Plotly
+    df_agg['iso_alpha'] = df_agg['Country'].apply(get_country_code)
+    df_agg = df_agg.dropna(subset=['iso_alpha'])
 
-# Filter data based on selected time window
-if time_window_option == "Last 7 days":
-    date_filter_start = datetime.today() - timedelta(days=7)
-elif time_window_option == "Last 30 days":
-    date_filter_start = datetime.today() - timedelta(days=30)
-elif time_window_option == "Last 90 days":
-    date_filter_start = datetime.today() - timedelta(days=90)
-elif time_window_option == "All Time":
-    date_filter_start = datetime.min  # No start date, so include all articles
-else:  # Custom Date Range
-    start_date = st.sidebar.date_input("Start Date", datetime.today() - timedelta(days=30))  # Now in the sidebar
-    end_date = st.sidebar.date_input("End Date", datetime.today())  # Now in the sidebar
-    date_filter_start = datetime.combine(start_date, datetime.min.time())
-    date_filter_end = datetime.combine(end_date, datetime.max.time())
+    # Create the choropleth map
+    fig = px.choropleth(
+        df_agg,
+        locations="iso_alpha",
+        color="Avg_Sentiment",
+        hover_name="Country",
+        hover_data={"Nr_News": True, "Avg_Sentiment": True},
+        color_continuous_scale=px.colors.diverging.RdYlGn,
+        range_color=[-1, 1],
+        labels={"Avg_Sentiment": "Avg. Sentiment"},
+        title=""
+    )
 
-################################### GOOD SO FAR
+    # Transparent + modern with country borders
+    fig.update_geos(
+        projection_type="natural earth",
+        scope="world",
+        showcountries=True,
+        showcoastlines=True,
+        showframe=True
+    )
 
-# Filter the df_copy based on the time window
-df_copy_filtered = df_copy[df_copy['Published'].apply(pd.to_datetime) >= date_filter_start]
+    fig.update_layout(
+        margin=dict(l=0, r=0, t=30, b=0),
+        coloraxis_colorbar=dict(
+            title="Avg. Sentiment",
+            tickvals=[-1, -0.5, 0, 0.5, 1],
+            ticktext=["Very Neg", "-0.5", "Neutral", "+0.5", "Very Pos"]
+        )
+    )
 
-# st.write(df_copy_filtered)
+    st.plotly_chart(fig, use_container_width=True)
 
-# Filter the df_copy based on the time window
-df_copy_filtered = df_copy[df_copy['Published'].apply(pd.to_datetime) >= date_filter_start]
+# --- Plot sentiment trend ---
+def plot_sentiment_trend_per_country(df_filtered):
+    # Ensure datetime format
+    df_filtered['Published'] = pd.to_datetime(df_filtered['Published'])
 
-# df_agg: stores filtered news per country, has Country, Nr. Articles, Avg. Sentiment 
-df_agg = df_copy_filtered.groupby('Country').agg(
-    num_articles=('Title', 'count'),  # Count the number of articles per country
-    avg_sentiment=('Sentiment', 'mean')  # Calculate the average sentiment per country
-).reset_index()
+    # Group by Country and Date to get daily average sentiment
+    df_trend = df_filtered.groupby(['Country', 'Published']).agg(
+        Avg_Sentiment=('Sentiment', 'mean')
+    ).reset_index()
 
-# Rename columns to display custom names
-df_agg = df_agg.rename(columns={
-    'num_articles': 'Nr. News',
-    'avg_sentiment': 'Avg. Sentiment'
-})
+    df_trend = df_trend.sort_values(by=['Country', 'Published'])
 
-# Round the avg_sentiment to 2 decimal places
-df_agg['Avg. Sentiment'] = df_agg['Avg. Sentiment'].round(2)
+    # Get countries that have actual sentiment data
+    countries_with_data = df_trend['Country'].unique()
 
-################################### GOOD SO FAR
+    for country in countries_with_data:
+        country_data = df_trend[df_trend['Country'] == country]
 
-# Content display based on selected section
-if st.session_state.selected_section == "Home":
+        if country_data.empty:
+            continue  # Skip if no data
+
+        fig = px.line(
+            country_data,
+            x='Published',
+            y='Avg_Sentiment',
+            title=f"{country} - Sentiment Trend",
+            labels={'Published': 'Date', 'Avg_Sentiment': 'Average Sentiment'},
+            line_shape='spline',
+            markers=True  # ✅ Show individual sentiment points
+        )
+
+        fig.update_layout(
+            height=300,
+            yaxis=dict(range=[-1, 1]),
+            xaxis=dict(tickformat='%b %d', tickangle=-45),
+            margin=dict(l=0, r=0, t=40, b=20)
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+# --- Show word cloud ---
+def show_word_cloud(df, start_date, end_date):
+    df = df.copy()
+    df['Published'] = pd.to_datetime(df['Published'])
+    df = df[(df['Published'] >= pd.to_datetime(start_date)) & (df['Published'] <= pd.to_datetime(end_date))]
+
+    # Clean and process text
+    df['Cleaned_Summary'] = df['Summary'].apply(clean_text)
+    df['Nouns_Only'] = df['Cleaned_Summary'].apply(process_text)
+    combined_text = ' '.join(df['Nouns_Only'].dropna().astype(str))
+
+    # Generate word cloud
+    wordcloud = WordCloud(
+        width=800,
+        height=400,
+        background_color='white',
+        max_words=100,
+        colormap='viridis'
+    ).generate(combined_text)
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.imshow(wordcloud, interpolation='bilinear')
+    ax.axis('off')
+    st.pyplot(fig)
+
+
+# --- Session State ---
+if "current_page" not in st.session_state:
+    st.session_state.current_page = "home"
+
+# Optional: time window control (used by df_filtered)
+if "time_window" not in st.session_state:
+    st.session_state.time_window = "last 7 days"  # or allow user input
+
+# --- Sidebar Navigation ---
+with st.sidebar:
+   
+    if st.button("Home"):
+        st.session_state.current_page = "home"
+    if st.button("Sentiment per Country"):
+        st.session_state.current_page = "sentiment_country"
+    if st.button("Sentiment World Map"):
+        st.session_state.current_page = "sentiment_map"
+    if st.button("Sentiment Trend"):
+        st.session_state.current_page = "sentiment_trend"
+    if st.button("Word Cloud"):
+        st.session_state.current_page = "word_cloud"
+
+    time_window_options = ["Last 7 days", "Last 30 days", "Last 90 days", "Custom"]
+    selected_window = st.selectbox("Select time window", time_window_options)
+
+    # Initialize in session_state
+    if "time_window" not in st.session_state:
+        st.session_state.time_window = "Last 7 days"
+
+    if "custom_start" not in st.session_state:
+        st.session_state.custom_start = datetime.today() - timedelta(days=7)
+    if "custom_end" not in st.session_state:
+        st.session_state.custom_end = datetime.today()
+
+    # Show date inputs if custom selected
+    if selected_window == "Custom":
+        start_date = st.date_input("Start date", st.session_state.custom_start)
+        end_date = st.date_input("End date", st.session_state.custom_end)
+
+        # Save to session state
+        if start_date != st.session_state.custom_start:
+            st.session_state.custom_start = start_date
+            st.session_state.df = pd.DataFrame()  # trigger update
+
+        if end_date != st.session_state.custom_end:
+            st.session_state.custom_end = end_date
+            st.session_state.df = pd.DataFrame()  # trigger update
+    else:
+        if selected_window != st.session_state.time_window:
+            st.session_state.time_window = selected_window
+            st.session_state.df = pd.DataFrame()  # trigger update
+
+# --- Main Page Logic ---
+if st.session_state.current_page == "home":
     st.title("Welcome to Bayer News Sentiment Analysis Project")
     st.subheader("Introduction")
-    st.write("""
-        This app collects news articles related to **Bayer** from multiple global sources starting from **2025**.
-             """)
 
     st.write("""
-    The app then performs the following tasks:
-    - Calculates the sentiment of each article based on its summary.
-    - Displays sentiment scores on a world map.
-    - Generates a sentiment trend over time.
-    - Creates a word cloud for the most frequently reported topics.
-""")
+             This app collects and analyzes news articles related to **Bayer** from leading global media sources, starting from 2025.
+             It provides an interactive view of how Bayer is portrayed in the press through the following features:
+             - Sentiment analysis of each article based on its summary
+             - Geographic visualization of average sentiment scores by country
+             - Time-series trend showing how media sentiment evolves over time
+             - Word cloud generation to highlight the most frequently reported topics
+
+            *Note: This analysis reflects media narratives, not direct public or governmental attitudes.*
+             """)
     
     st.write("""
-    Click the buttons in the navigation sidebar to explore the different sections of the app and view the content.
-""")
+             Click the buttons in the navigation sidebar to explore the different sections of the app and view the content.
+             """)
     
     st.subheader("About me")
     st.write("""
-    I’m **Hemei Wang**, a Senior Product Designer with a strong passion for building user-centric experiences in tech. 
-    Over the years, I’ve honed my skills in designing intuitive web applications, focusing on making complex processes simple and accessible.
+             I’m **Tianhemei Wang**, a Senior Product Designer with a strong passion for building user-centric experiences in tech. 
+             Over the years, I’ve honed my skills in designing intuitive web applications, focusing on making complex processes simple and accessible.
 
-    As part of my personal growth, I’ve recently embarked on learning **Artificial Intelligence (AI)**. 
-    Although my background is in design, I believe AI is an exciting field with immense potential, and I wanted to prove to myself that I could successfully learn and apply AI skills. 
-    This project is a way for me to foster my ability to grasp and implement AI concepts despite my design background.
+             As part of my personal growth, I’ve recently embarked on learning **Artificial Intelligence (AI)**. 
+             Although my background is in design, I believe AI is an exciting field with immense potential, and I wanted to prove to myself that I could successfully learn and apply AI skills. 
+             This project is a way for me to foster my ability to grasp and implement AI concepts despite my design background.
 
-    **Note**: The app is using real data to show sentiment trends, word clouds, and sentiment on the world map. However, due to limited funding (I’m working on this project with my own interest and budget) and the fact that I’m still learning, there are definitely areas that can be improved. There are opportunities for future enhancements as I continue developing my AI skills.
+             **Note**: The app is using real data to show sentiment trends, word clouds, and sentiment on the world map. However, due to limited funding (I’m working on this project with my own interest and budget) and the fact that I’m still learning, there are definitely areas that can be improved. There are opportunities for future enhancements as I continue developing my AI skills.
 
-    If you’d like to connect or learn more about my work and journey in product design and AI, feel free to reach out!
+             If you’d like to connect or learn more about my work and journey in product design and AI, feel free to reach out!
+            
+             **Contact**: 
+             - Email: hemei.wang@bayer.com
+             """)
+
+
+elif st.session_state.current_page in ["sentiment_country", "sentiment_map", "sentiment_trend", "word_cloud"]:
+    if st.session_state.df.empty:
+        start_date, _ = get_date_range()
+        with st.spinner("Fetching news..."):
+            df = fetch_all_articles(start_date)
+        st.session_state.df = df
+
+# --- Sentiment per Country ---
+if st.session_state.current_page == "sentiment_country":
+    df = st.session_state.df
+    start_date, end_date = get_date_range()
+
+    st.markdown(f"🗓️ **News from `{start_date.strftime('%Y-%m-%d')}` to `{end_date.strftime('%Y-%m-%d')}`**")
+
+    if df.empty:
+        st.warning("⚠️ No news articles found for the selected time window.")
+    elif not all(col in df.columns for col in ['Title', 'Published', 'Source', 'Country', 'Summary']):
+        st.error("⚠️ Fetched data is missing required columns. Please try refreshing or check feed source.")
+    else:
+               
+        df_filtered = prepare_df_filtered(df, st.session_state.time_window)
+        df_agg = aggregate_sentiment_by_country(df_filtered)
+
+        st.title("Aggregated Media Sentiment per Country")
+        st.markdown("Sentiment scores range from -1 to 1, where -1 indicates very negative sentiment, 0 is neutral, and 1 indicates very positive sentiment.")
+
+        st.info(f"📊 A total of **{len(df_filtered)}** news articles from the selected date range were analyzed for country-level sentiment.")
+
+        st.dataframe(df_agg)
+
+    st.title("Fetched News – Original")
+    st.markdown("Click on any news title to open the original article:")
+
+    df_display = df.copy()
+
+    # Clean up 'Source' column (extract href if it's a dict)
+    df_display["Source"] = df_display["Source"].apply(
+        lambda s: s.get("href") if isinstance(s, dict) and "href" in s else s
+    )
+
+    # Create a new DataFrame with selected and formatted columns
+    df_cleaned = pd.DataFrame({
+        "Title": df_display.apply(
+            lambda row: f"[{row['Title']}]({row['Link']})", axis=1
+        ),
+        "Published": df_display["Published"],
+        "Source": df_display["Source"],
+        "Country": df_display["Country"]
+    })
+
+    # Display the cleaned DataFrame as markdown
+    st.markdown(df_cleaned.to_markdown(index=False), unsafe_allow_html=True)
+
+
+# --- Sentiment World Map ---
+elif st.session_state.current_page == "sentiment_map":
     
-    **Contact**: 
-    - Email: hemei.wang@bayer.com
-""")
+    df = st.session_state.df
 
-################################## GOOD SO FAR
+    start_date, end_date = get_date_range()
+    st.markdown(f"🗓️ **News from `{start_date.strftime('%Y-%m-%d')}` to `{end_date.strftime('%Y-%m-%d')}`**")
 
-# Display content for sentiment per country
-elif st.session_state.selected_section == "Sentiment per country":
-    st.subheader("Sentiment per Country")
-    st.write(f"For news from {date_filter_start.strftime('%Y-%m-%d')} to {date_filter_end.strftime('%Y-%m-%d')}")
+    df_filtered = prepare_df_filtered(st.session_state.df, st.session_state.time_window)
+    df_agg = aggregate_sentiment_by_country(df_filtered)
+
+    st.title("Media Sentiment World Map")
+    st.markdown("This world map visualizes the average sentiment of news articles mentioning Bayer across medien in different countries within the selected time window.")
+
+    st.info(f"📊 A total of **{len(df_filtered)}** news articles from the selected date range were analyzed for world map.")
+
+    plot_world_map(df_agg)
+
+# --- Sentiment Trend ---
+elif st.session_state.current_page == "sentiment_trend":
     
-    # # Filter the df_copy based on the time window
-    # df_copy_filtered = df_copy[df_copy['Published'].apply(pd.to_datetime) >= date_filter_start]
+    df = st.session_state.df
 
-    # # Group by Country and calculate the average sentiment for each country
-    # # df_agg: stores filtered news per country, has Country, Nr. Articles, Avg. Sentiment 
-    # df_agg = df_copy_filtered.groupby('Country').agg(
-    #     num_articles=('Title', 'count'),  # Count the number of articles per country
-    #     avg_sentiment=('Sentiment', 'mean')  # Calculate the average sentiment per country
-    # ).reset_index()
+    start_date, end_date = get_date_range()
+    st.markdown(f"🗓️ **News from `{start_date.strftime('%Y-%m-%d')}` to `{end_date.strftime('%Y-%m-%d')}`**")
 
-    # # Rename columns to display custom names
-    # df_agg = df_agg.rename(columns={
-    #     'num_articles': 'Nr. News',
-    #     'avg_sentiment': 'Avg. Sentiment'
-    # })
+    df_filtered = prepare_df_filtered(df, st.session_state.time_window)
 
-    # # Round the avg_sentiment to 2 decimal places
-    # df_agg['Avg. Sentiment'] = df_agg['Avg. Sentiment'].round(2)
+    st.title("Media Sentiment Trend Over Time")
 
-    st.write(df_agg)
+    st.info(f"📊 A total of **{len(df_filtered)}** news articles from the selected date range were analyzed for country-level sentiment.")
 
-################################### GOOD SO FAR
+    plot_sentiment_trend_per_country(df_filtered)
 
-# Display content for sentiment world map
-elif st.session_state.selected_section == "Sentiment world map":
-   st.subheader("Sentiment World Map")
-   st.write(f"For news from {date_filter_start.strftime('%Y-%m-%d')} to {date_filter_end.strftime('%Y-%m-%d')}")
 
-   # Load the Natural Earth shapefile manually
-   shapefile_path = r"C:\Users\GDJUX\AppData\Local\Programs\Python\Python313\ne_110m_admin_0_countries\ne_110m_admin_0_countries.shp"  # Update this path
-   world = gpd.read_file(shapefile_path)
- 
-   # Merge the world map with the sentiment data
-   world['Country'] = world['NAME']
-   df_agg = df_agg.rename(columns={'Country': 'Country'})  # Ensure column names match for merging
-   world = world.merge(df_agg[['Country', 'Avg. Sentiment']], on='Country', how='left')
+# --- Word Cloud ---
+elif st.session_state.current_page == "word_cloud":
+    df = st.session_state.df
+    start_date, end_date = get_date_range()
 
-   # Plotting the map with Plotly
-   fig = px.choropleth(world,
-                       locations='Country',
-                       locationmode='country names',
-                       color='Avg. Sentiment',
-                       hover_name='Country',
-                       color_continuous_scale='Cividis',  # Default color scale (red to green)
-                       labels={'Avg. Sentiment': 'Average Sentiment'},
-                       #title="Sentiment Towards Bayer by Country"
-                       )
+    st.markdown(f"🗓️ **News from `{start_date.strftime('%Y-%m-%d')}` to `{end_date.strftime('%Y-%m-%d')}`**")
 
-    # Update map's layout to default settings
-   fig.update_geos(
-       showcoastlines=True, 
-       coastlinecolor="Black", 
-       showland=True, 
-       landcolor="whitesmoke",  # Default land color
-       )
+    if df.empty:
+        with st.spinner("Fetching news..."):
+            df = fetch_all_articles(start_date)
+            st.session_state.df = df
 
-    # Resize the map to make it larger
-   fig.update_layout(
-       autosize=True,
-       height=600,  # Default height for better visibility
-       width=1200,  # Default width for better visibility
-       )
+    # ✅ Prepare word cloud dataframe
+    df_cloud = prepare_wordcloud_df(df, start_date, end_date)
 
-    # Display the updated map in Streamlit
-   st.plotly_chart(fig)
+    st.title("Word Cloud for Topics")
 
-#####################################################################
+    # ✅ Summary
+    st.info(f"☁️ A total of **{len(df_cloud)}** news articles from the selected date range were processed to generate the word cloud.")
 
-
-# # Display content for sentiment trend  
-# elif st.session_state.selected_section == "Sentiment trend":
-#     st.subheader("Sentiment Trend")
-#     st.write(f"For news from {date_filter_start.strftime('%Y-%m-%d')} to {date_filter_end.strftime('%Y-%m-%d')}")
-
-# # Display content for word cloud  
-# elif st.session_state.selected_section == "Word cloud":
-#     st.subheader("Word Cloud")
-#     st.write(f"For news from {date_filter_start.strftime('%Y-%m-%d')} to {date_filter_end.strftime('%Y-%m-%d')}")
- 
-
-
-######################################################################################
-
-
-
-# # Filter the df_copy based on the time window
-# df_copy_filtered = df_copy[df_copy['Published'].apply(pd.to_datetime) >= date_filter_start]
-
-# # Group by Country and calculate the average sentiment for each country
-# # df_agg: stores filtered news per country, has Country, Nr. Articles, Avg. Sentiment 
-# df_agg = df_copy_filtered.groupby('Country').agg(
-#     num_articles=('Title', 'count'),  # Count the number of articles per country
-#     avg_sentiment=('Sentiment', 'mean')  # Calculate the average sentiment per country
-# ).reset_index()
-
-# # Rename columns to display custom names
-# df_agg = df_agg.rename(columns={
-#     'num_articles': 'Nr. News',
-#     'avg_sentiment': 'Avg. Sentiment'
-# })
-
-# # Round the avg_sentiment to 2 decimal places
-# df_agg['Avg. Sentiment'] = df_agg['Avg. Sentiment'].round(2)
-
-# ## NAVI SIDEBAR
-
-# if st.sidebar.button('Home'):
-#     st.session_state.page = "home"
-
-
-
-
-
-
-
-
-
-
-# if st.sidebar.button('Sentiment per Country'):
-#     st.session_state.page = "sentiment_country"
-
-# if st.sidebar.button('Sentiment Trend'):
-#     st.session_state.page = "sentiment_trend"
-
-# if st.sidebar.button('Sentiment World Map'):
-#     st.session_state.page = "sentiment_map"
-
-# if st.sidebar.button('Word Cloud'):
-#     st.session_state.page = "word_cloud"
-
-# if st.sidebar.button('Filtered News'):
-#     st.session_state.page = 'filtered_news'
-
-# if st.sidebar.button('Project Background'):
-#     st.session_state.page = "background"
-
-# if 'page' not in st.session_state:
-#     st.session_state.page = "home"  # Default page
-
-
-
-
-
-
-# # Sidebar Navigation
-
-
-
-
-
-
-
-
-
-
-
-
-
-### DEFINE PAGE CONTENTS
-
-# if st.session_state.page == "home":        
-#     # Sentiment per country section
-
-#     st.title("Bayer News Sentiment")
-
-#     #################################
-#     st.subheader("About the app")
-
-#     st.write("""
-#              This app collects news articles related to **Bayer** from multiple global sources starting from **2025**.
-#              """)
-
-#     st.write("""
-#         The app performs the following tasks:
-#         - Calculates the sentiment of each article based on its summary.
-#         - Displays sentiment scores on a world map.
-#         - Generates a sentiment trend over time.
-#         - Creates a word cloud for the most frequently reported topics.
-#     """)
-
-#     st.write("""
-#         Click the buttons in the navigation sidebar to explore the different sections of the app and view the content.
-#     """)
-
-#     ###############################
-
-#     st.subheader("About me")
-
-#     st.write("""
-#     Hi, I’m **Hemei Wang**, a Senior Product Designer in UX field with a strong passion for creating user-centric experiences. 
-#     Over the years, I’ve honed my skills in designing intuitive web app and mobile apps, focusing on making complex processes simple and accessible.
-
-#     As part of my personal growth, I’ve recently embarked on learning **Artificial Intelligence (AI)**. 
-#     Although my background is in design, I believe AI is an exciting field with immense potential, and I wanted to prove to myself that I could successfully learn and apply AI skills. 
-#     This project is a way for me to further develop my ability to grasp and implement AI concepts despite my design background.
-
-#     **Note**: The app is using real data to show sentiment trends, word clouds, and sentiment on the world map. However, due to limited funding (I’m working on this project with my own interest and budget) and the fact that I’m still learning, there are definitely areas that can be improved. There are opportunities for future enhancements as I continue developing my AI skills.
-             
-#     If you'd like to learn more about my journey, or if you're interested in collaborating, feel free to reach out!
-
-#     **Contact**: 
-#     - Email: hemei.wang@bayer.com
-# """)
-
-
-# # Define sections based on selected page
-# if st.session_state.page == "sentiment_country":        
-#     # Sentiment per country section
-#     st.title("Sentiment Per Country")
-#     st.write("Here is the aggregated sentiment per country")  # Your content for sentiment per country
-#     st.write(df_agg)
-
-# # Function to display sentiment trend
-# def display_sentiment_trend(df_copy_filtered):
-#     #st.title("Sentiment Trend Over Time")
-
-#     # List of countries for user selection
-#     countries = df_copy_filtered['Country'].unique()
-#     selected_countries = st.multiselect("Select Countries", options=countries, default=countries)
-
-#     # Filter data for selected countries
-#     sentiment_trend = df_copy_filtered[df_copy_filtered['Country'].isin(selected_countries)]
-
-#     # Plotting the trend
-#     fig, ax = plt.subplots(figsize=(12, 6))
-
-#     for country in selected_countries:
-#         country_data = sentiment_trend[sentiment_trend['Country'] == country]
-#         # Convert dates to numeric values for spline fitting
-#         x_vals = mdates.date2num(country_data['Published'])
-#         y_vals = country_data['Sentiment']
-        
-#         # Apply spline smoothing
-#         spline = UnivariateSpline(x_vals, y_vals, s=0.5)  # Adjust 's' to control smoothness
-#         smoothed_y = spline(x_vals)  # Generate the smoothed sentiment values
-
-#         ax.plot(country_data['Published'], smoothed_y, label=country)
-
-#     ax.set_title("Sentiment Trend per Country", fontsize=14)
-#     ax.set_xlabel("Date", fontsize=12)
-#     ax.set_ylabel("Sentiment Score", fontsize=12)
-    
-#     ax.xaxis.set_major_locator(mdates.WeekdayLocator())
-#     ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-#     ax.xaxis.set_minor_locator(mdates.DayLocator())
-#     plt.xticks(rotation=45)
-    
-#     plt.grid(True)
-#     plt.tight_layout()
-    
-#     # Display the legend
-#     ax.legend(title="Countries", loc='upper left')
-    
-#     st.pyplot(fig)
-#     st.title("Sentiment Trend Over Time")
-
-#     # List of countries for user selection
-#     countries = df_copy_filtered['Country'].unique()
-#     selected_countries = st.multiselect("Select Countries", options=countries, default=countries)
-
-#     # Filter data for selected countries
-#     sentiment_trend = df_copy_filtered[df_copy_filtered['Country'].isin(selected_countries)]
-
-#     # Plotting the trend
-#     fig, ax = plt.subplots(figsize=(12, 6))
-
-#     for country in selected_countries:
-#         country_data = sentiment_trend[sentiment_trend['Country'] == country]
-#         # Convert dates to numeric values for spline fitting
-#         x_vals = mdates.date2num(country_data['Published'])
-#         y_vals = country_data['Sentiment']
-        
-#         # Apply spline smoothing
-#         spline = UnivariateSpline(x_vals, y_vals, s=0.5)  # Adjust 's' to control smoothness
-#         smoothed_y = spline(x_vals)  # Generate the smoothed sentiment values
-
-#         ax.plot(country_data['Published'], smoothed_y, label=country)
-
-#     ax.set_title("Sentiment Trend per Country", fontsize=14)
-#     ax.set_xlabel("Date", fontsize=12)
-#     ax.set_ylabel("Sentiment Score", fontsize=12)
-    
-#     ax.xaxis.set_major_locator(mdates.WeekdayLocator())
-#     ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-#     ax.xaxis.set_minor_locator(mdates.DayLocator())
-#     plt.xticks(rotation=45)
-    
-#     plt.grid(True)
-#     plt.tight_layout()
-    
-#     # Display the legend
-#     ax.legend(title="Countries", loc='upper left')
-    
-#     st.pyplot(fig)    
-
-# Check which page user selected
-
-
-# ##########################################################################################
-
-# ### SENTIMENT TREND
-# if st.session_state.page == "sentiment_trend":
-    
-#     # Sentiment per country section
-#     st.title("Sentiment Trend")
-#     st.write("Here is the aggregated sentiment develops overtime...")  # Your content for sentiment per country
-#     # Display sentiment trend with smoothed lines
-#     display_sentiment_trend(df_copy_filtered)
-   
-# if st.session_state.page == "sentiment_map":
-#     # Sentiment world map section
-#     st.title("Sentiment World Map")
-#     st.write("Here is the sentiment world map...")  # Your content for the map
-
-#     # Load the Natural Earth shapefile manually
-#     shapefile_path = r"C:\Users\GDJUX\AppData\Local\Programs\Python\Python313\ne_110m_admin_0_countries\ne_110m_admin_0_countries.shp"  # Update this path
-#     world = gpd.read_file(shapefile_path)
-
-#     # Check the column names of the world GeoDataFrame
-#     # st.write("Shapefile columns:", world.columns)
-
-#     # Merge the world map with the sentiment data
-#     world['Country'] = world['NAME']
-#     df_agg = df_agg.rename(columns={'Country': 'Country'})  # Ensure column names match for merging
-#     world = world.merge(df_agg[['Country', 'Avg. Sentiment']], on='Country', how='left')
-
-#     st.subheader("Sentiment by Country")
-
-#     # Plotting the map with Plotly
-#     fig = px.choropleth(world,
-#                         locations='Country',
-#                         locationmode='country names',
-#                         color='Avg. Sentiment',
-#                         hover_name='Country',
-#                         color_continuous_scale='Cividis',  # Default color scale (red to green)
-#                         labels={'Avg. Sentiment': 'Average Sentiment'},
-#                         #title="Sentiment Towards Bayer by Country"
-#                         )
-
-#     # Update map's layout to default settings
-#     fig.update_geos(
-#         showcoastlines=True, 
-#         coastlinecolor="Black", 
-#         showland=True, 
-#         landcolor="whitesmoke",  # Default land color
-#     )
-
-#     # Resize the map to make it larger
-#     fig.update_layout(
-#         autosize=True,
-#         height=600,  # Default height for better visibility
-#         width=1200,  # Default width for better visibility
-#     )
-
-#     # Display the updated map in Streamlit
-#     st.plotly_chart(fig)
-
-# if st.session_state.page == "word_cloud":
-#     # Word cloud section
-#     st.title("Word Cloud")
-#     st.write("Here is the word cloud...")  # Your content for the word cloud
-
-#     # Function to clean and preprocess the text
-#     STOPWORDS = set([
-#         'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your', 'yours', 'yourself', 'yourselves', 
-#         'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself', 'it', 'its', 'itself', 'they', 'them', 'their', 
-#         'theirs', 'themselves', 'what', 'which', 'who', 'whom', 'this', 'that', 'these', 'those', 'am', 'is', 'are', 
-#         'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'having', 'do', 'does', 'did', 'doing', 'a', 'an', 
-#         'the', 'and', 'but', 'if', 'or', 'because', 'as', 'until', 'while', 'of', 'at', 'by', 'for', 'with', 'about', 
-#         'against', 'between', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'to', 'from', 'up', 
-#         'down', 'in', 'out', 'on', 'off', 'over', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when', 
-#         'where', 'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 
-#         'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 's', 't', 'can', 'will', 'just', 'don', 'should', 'now'
-#     ])
-
-#     # Function to clean text (remove non-alphabetic characters and HTML tags)
-#     def clean_text(text):
-#         # Remove HTML tags
-#         text = re.sub(r'<.*?>', '', text)  # Remove HTML tags
-#         # Remove HTML entities (e.g., &nbsp;, &lt;, &gt;, etc.)
-#         text = re.sub(r'&[a-zA-Z0-9#]+;', '', text)  # Remove HTML entities
-#         # Remove non-alphabetic characters (keeping spaces and Chinese characters)
-#         text = re.sub(r'[^a-zA-Z\s\u4e00-\u9fa5]', '', text)
-#         # Convert to lowercase
-#         text = text.lower()
-#         # Remove specific irrelevant words (e.g., Bayer, Bayern, etc.)
-#         unwanted_words = ['title', 'says', 'sbnation', 'targetblank', 'font', 'nbsp', 'football', 'soccer', 'bayer', 'bayern','bayerns', 'bundesliga','leverkusen', 'munich','chosunbiz','mainz','could']
-#         text = ' '.join([word for word in text.split() if word not in unwanted_words])
-#         return text
-
-#     def process_text(text):
-#         words = text.split()
-#         words = [word for word in words if word not in STOPWORDS]
-#         return ' '.join(words)
-
-#     # Generate Word Cloud
-#     def generate_wordcloud(text_data):
-#         wordcloud = WordCloud(
-#             stopwords=STOPWORDS,
-#             background_color='white',
-#             width=800,
-#             height=400,
-#             max_words=200,
-#             contour_color='black',
-#             contour_width=1
-#         ).generate(' '.join(text_data))
-
-#         # Display the word cloud using Streamlit
-#         plt.figure(figsize=(10, 5))
-#         plt.imshow(wordcloud, interpolation='bilinear')
-#         plt.axis('off')
-#         st.pyplot(plt)
-
-#     # Filter df based on the selected date range
-#     df_cloud = df.copy()
-#     df_cloud['Published'] = pd.to_datetime(df_cloud['Published'])  # Ensure Published is in datetime format
-#     df_cloud = df_cloud[(df_cloud['Published'] >= date_filter_start) & (df_cloud['Published'] <= date_filter_end)]
-
-#     # Clean and process the 'Summary' column
-#     df_cloud['Cleaned_Summary'] = df_cloud['Summary'].apply(lambda x: clean_text(x))
-#     df_cloud['Processed_Summary'] = df_cloud['Cleaned_Summary'].apply(lambda x: process_text(x))
-
-#     # Generate word cloud from filtered and processed summaries
-#     generate_wordcloud(df_cloud['Processed_Summary'])
-
-
-# ### FILTERED NEWS
-# if st.session_state.page == "filtered_news":
-#     st.title("News in selected time window")
-#     st.write(df_copy_filtered)
-
-
-# if st.session_state.page == "background":
-#     # Background section
-#     st.title("Project Background")
-#     st.write("""
-#         This is a sentiment analysis project I developed to track and analyze news sentiment about Bayer.
-#         Through this project, I gained experience in data collection, sentiment analysis, and visualizations.
-#     """)  # Your project background content
+    show_word_cloud(df, start_date, end_date)
