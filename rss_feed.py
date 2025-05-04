@@ -175,12 +175,25 @@ def fetch_all_articles(start_date):
     return fetch_global_bayer_articles(start_date, country_sources)
 
 def get_date_range():
+    today = datetime.today().date()
+
     if st.session_state.time_window == "Custom":
         return st.session_state.custom_start, st.session_state.custom_end
-    days = int(re.findall(r'\d+', st.session_state.time_window)[0])
-    end = datetime.today().date()
-    start = end - timedelta(days=days)
-    return start, end
+
+    elif st.session_state.time_window == "This year to date":
+        start = date(today.year, 1, 1)
+        return start, today
+
+    elif st.session_state.time_window == "Last full calendar year":
+        start = date(today.year - 1, 1, 1)
+        end = date(today.year - 1, 12, 31)
+        return start, end
+
+    else:
+        # Extract number of days from preset options like "Last 60 days"
+        days = int(re.findall(r'\d+', st.session_state.time_window)[0])
+        start = today - timedelta(days=days)
+        return start, today
 
 ## --- Calculate sentiment using TextBlob (returns sentiment score as a number) ---
 def get_sentiment(text):
@@ -214,6 +227,9 @@ def aggregate_sentiment_by_country(df_filtered):
     df_agg['Avg_Sentiment'] = df_agg['Avg_Sentiment'].round(2)
     return df_agg
 
+# Remove specific irrelevant words (e.g., Bayer, Bayern, etc.)
+unwanted_words = ['lays','dr','post','times','bayers','dortmund','chosunbizchosunbiz','title', 'says', 'sbnation', 'targetblank', 'font', 'nbsp', 'football', 'soccer', 'bayer', 'bayern','bayerns', 'bundesliga','leverkusen', 'munich','chosunbiz','mainz','could']
+
 ### --- Function stubs used in defining df_cloud ---
 def clean_text(text):
     text = re.sub(r'<.*?>', '', text)  # Remove HTML tags
@@ -224,17 +240,32 @@ def clean_text(text):
     # Convert to lowercase
     text = text.lower()
     # Remove specific irrelevant words (e.g., Bayer, Bayern, etc.)
-    unwanted_words = ['dortmund','chosunbizchosunbiz','title', 'says', 'sbnation', 'targetblank', 'font', 'nbsp', 'football', 'soccer', 'bayer', 'bayern','bayerns', 'bundesliga','leverkusen', 'munich','chosunbiz','mainz','could']
+    #unwanted_words = ['post','times','bayers','dortmund','chosunbizchosunbiz','title', 'says', 'sbnation', 'targetblank', 'font', 'nbsp', 'football', 'soccer', 'bayer', 'bayern','bayerns', 'bundesliga','leverkusen', 'munich','chosunbiz','mainz','could']
     
     return ' '.join([word for word in text.split() if word not in unwanted_words])
 
 def process_text(text):
+    # Capitalize the first character to help POS tagging
+    text = text.strip().capitalize()
+
     # Tokenize and POS tag
     blob = TextBlob(text)
-    nouns = [word for word, tag in blob.tags if tag.startswith('NN')]
-    # Remove stopwords
-    nouns = [word for word in nouns if word not in STOPWORDS]
-    return ' '.join(nouns)
+
+    # Extract proper nouns (NNP, NNPS)
+    proper_nouns = [
+        word for word, tag in blob.tags
+        if tag in ("NNP", "NNPS")
+    ]
+
+    # Clean and filter
+    proper_nouns = [
+        word.lower() for word in proper_nouns
+        if word.lower() not in STOPWORDS
+        and word.lower() not in unwanted_words
+        and word.isalpha()
+    ]
+
+    return ' '.join(proper_nouns)
 
 ## --- Prepare df_cloud for word cloud ---
 def prepare_wordcloud_df(df, start_date, end_date):
@@ -336,9 +367,12 @@ def plot_sentiment_trend_per_country(df_filtered):
         fig.update_layout(
             height=300,
             yaxis=dict(range=[-1, 1]),
-            xaxis=dict(tickformat='%b %d', tickangle=-45),
-            margin=dict(l=0, r=0, t=40, b=20)
-        )
+            xaxis=dict(
+                tickformat='%Y %b %d',  # Show month and year, e.g., "Mar 2023"
+                tickangle=-45
+    ),
+    margin=dict(l=0, r=0, t=40, b=20)
+)
 
         st.plotly_chart(fig, use_container_width=True)
 
@@ -391,21 +425,32 @@ with st.sidebar:
         st.session_state.current_page = "sentiment_trend"
     if st.button("Word Cloud"):
         st.session_state.current_page = "word_cloud"
+    if st.button("Tech Overview"):
+        st.session_state.current_page = "tech_overview"
+
 
     # --- Time Window Selection ---
     st.markdown("---")
     st.subheader("🕒 Time Window")
 
     # Reminder for users
-    st.caption("📌 **Note:** This app currently supports fetching news only from **2025-01-01** onward. Start date will be restricted accordingly.")
+    st.caption("📌 **Note:** This app currently supports fetching news only from **2022-01-01** onward. Start date will be restricted accordingly.")
 
-    time_window_options = ["Last 7 days", "Last 30 days", "Last 90 days", "Custom"]
+    time_window_options = [
+        "Last 30 days",
+        "Last 60 days",
+        "Last 90 days",
+        "Last 180 days",
+        "This year to date",
+        "Last full calendar year",
+        "Custom"
+        ]
     selected_window = st.selectbox("Select time window", time_window_options)
 
     if "time_window" not in st.session_state:
-        st.session_state.time_window = "Last 7 days"
+        st.session_state.time_window = "Last 30 days"
     if "custom_start" not in st.session_state:
-        st.session_state.custom_start = datetime.today().date() - timedelta(days=7)
+        st.session_state.custom_start = datetime.today().date() - timedelta(days=30)
     if "custom_end" not in st.session_state:
         st.session_state.custom_end = datetime.today().date()
 
@@ -415,13 +460,13 @@ with st.sidebar:
         start_date = st.date_input(
             "Start date",
             value=st.session_state.custom_start,
-            min_value=datetime(2025, 1, 1).date(),
+            min_value=datetime(2022, 1, 1).date(),
             key="custom_start_picker"
         )
         end_date = st.date_input(
             "End date",
             value=st.session_state.custom_end,
-            min_value=datetime(2025, 1, 1).date(),
+            min_value=datetime(2022, 1, 1).date(),
             key="custom_end_picker"
         )
 
@@ -442,25 +487,26 @@ with st.sidebar:
 
 # --- Main Page Logic ---
 if st.session_state.current_page == "home":
-    st.title("Welcome to Bayer News Sentiment Analysis Project")
-    st.subheader("Introduction")
+    st.title("🏠Welcome to Bayer News Sentiment Analysis Project")
+    st.subheader("📖Introduction")
 
     st.write("""
-             This app collects and analyzes news articles related to **Bayer** from leading global media sources, starting from 2025.
+             This app collects and analyzes news articles related to **Bayer** from leading global media sources, starting from **2022**.
              It provides an interactive view of how Bayer is portrayed in the press through the following features:
-             - Sentiment analysis of each article based on its summary
-             - Geographic visualization of average sentiment scores by country
-             - Time-series trend showing how media sentiment evolves over time
-             - Word cloud generation to highlight the most frequently reported topics
-
-            *Note: This analysis reflects media narratives, not direct public or governmental attitudes.*
+             - 💬 Sentiment analysis of each article based on its summary  
+             - 🗺️ Geographic visualization of average sentiment scores by country  
+             - 📈 Time-series trend showing how media sentiment evolves over time  
+             - ☁️ Word cloud generation to highlight the most frequently reported topics  
+             - 🚫 **Bayer's own corporate news and press releases are excluded** — the app focuses solely on external media sentiment
+             
+             *Note: This analysis reflects media narratives, not direct public or governmental attitudes.*
              """)
     
     st.write("""
-             Click the buttons in the navigation sidebar to explore the different sections of the app and view the content.
+             ⬅️ Click the buttons in the navigation sidebar to explore the different sections of the app and view the content.
              """)
     
-    st.subheader("About me")
+    st.subheader("🙋‍♀️About me")
     st.write("""
              I’m **Tianhemei Wang**, a Senior Product Designer with a strong passion for building user-centric experiences in tech. 
              Over the years, I’ve honed my skills in designing intuitive web applications, focusing on making complex processes simple and accessible.
@@ -501,7 +547,7 @@ if st.session_state.current_page == "sentiment_country":
         df_filtered = prepare_df_filtered(df, st.session_state.time_window)
         df_agg = aggregate_sentiment_by_country(df_filtered)
 
-        st.title("Aggregated Media Sentiment per Country")
+        st.title("🧭Aggregated Media Sentiment per Country")
         st.markdown("Sentiment scores range from -1 to 1, where -1 indicates very negative sentiment, 0 is neutral, and 1 indicates very positive sentiment.")
 
         st.info(f"📊 A total of **{len(df_filtered)}** news articles from the selected date range were analyzed for country-level sentiment.")
@@ -543,7 +589,7 @@ elif st.session_state.current_page == "sentiment_map":
     df_filtered = prepare_df_filtered(st.session_state.df, st.session_state.time_window)
     df_agg = aggregate_sentiment_by_country(df_filtered)
 
-    st.title("Media Sentiment World Map")
+    st.title("🗺️Media Sentiment World Map")
     st.markdown("This world map visualizes the average sentiment of news articles mentioning Bayer across medien in different countries within the selected time window.")
 
     st.info(f"📊 A total of **{len(df_filtered)}** news articles from the selected date range were analyzed for world map.")
@@ -560,7 +606,7 @@ elif st.session_state.current_page == "sentiment_trend":
 
     df_filtered = prepare_df_filtered(df, st.session_state.time_window)
 
-    st.title("Media Sentiment Trend Over Time")
+    st.title("📈Media Sentiment Trend Over Time")
 
     st.info(f"📊 A total of **{len(df_filtered)}** news articles from the selected date range were analyzed for country-level sentiment.")
 
@@ -582,9 +628,53 @@ elif st.session_state.current_page == "word_cloud":
     # ✅ Prepare word cloud dataframe
     df_cloud = prepare_wordcloud_df(df, start_date, end_date)
 
-    st.title("Word Cloud for Topics")
+    st.title("☁️Word Cloud for Topics")
 
     # ✅ Summary
     st.info(f"☁️ A total of **{len(df_cloud)}** news articles from the selected date range were processed to generate the word cloud.")
 
     show_word_cloud(df, start_date, end_date)
+
+elif st.session_state.current_page == "tech_overview":
+    st.title("🛠️ Tech Overview")
+    st.subheader("What powers this app and where it's going")
+
+    st.markdown("""
+### 🔧 Tech Stack Used
+
+- **Streamlit** – for building a fast, interactive data-driven UI
+- **TextBlob** – to perform basic sentiment analysis and part-of-speech tagging
+- **Google News RSS** – used to collect public media articles from global sources
+- **Pandas / Plotly / Matplotlib** – for data manipulation and visualizations
+- **WordCloud** – to visualize dominant named topics in media coverage
+- **Geopandas / pycountry** – for mapping sentiment to countries
+
+---
+
+### 🌍 Potential Use Cases
+
+- Track how **global media sentiment** evolves around a company or issue
+- Identify **regional media bias** or attention patterns
+- Detect major shifts in tone related to lawsuits, ESG, or product announcements
+- Provide insights for **public affairs**, **communications**, or **brand teams**
+
+---
+
+### ⚠️ Limitations (Current MVP)
+
+- Sentiment model is **simple (TextBlob)** and may misinterpret sarcasm, nuance, or multi-language content
+- The app currently uses **only RSS feeds**, which can be limited or inconsistent across countries
+- No storage or caching — data is refreshed live per session, which can slow things down
+- Word cloud extraction is **noun-based**, and might still miss important topics (e.g., phrases or entity relationships)
+
+---
+
+### 🚀 Ideas for Future Improvements
+
+- Integrate **spaCy or HuggingFace transformers** for much better sentiment and topic analysis
+- Use **news APIs or scraping** for more control and coverage (e.g., GNews, NewsAPI, Bing News)
+- Store and cache results in a database (e.g., Supabase or Firestore)
+- Add filtering by **country**, **topic**, or **keyword**
+- Highlight **trending entities or shifts** over time
+- Enable multilingual support or detection
+""")
