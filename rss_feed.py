@@ -372,13 +372,15 @@ def show_word_cloud(df, start_date, end_date):
 if "current_page" not in st.session_state:
     st.session_state.current_page = "home"
 
-# Optional: time window control (used by df_filtered)
 if "time_window" not in st.session_state:
-    st.session_state.time_window = "last 7 days"  # or allow user input
+    st.session_state.time_window = "Last 7 days"
+if "custom_start" not in st.session_state:
+    st.session_state.custom_start = datetime.today() - timedelta(days=7)
+if "custom_end" not in st.session_state:
+    st.session_state.custom_end = datetime.today()
 
-# --- Sidebar Navigation ---
+# --- Sidebar Navigation + Time Window Selection ---
 with st.sidebar:
-   
     if st.button("Home"):
         st.session_state.current_page = "home"
     if st.button("Sentiment per Country"):
@@ -390,35 +392,53 @@ with st.sidebar:
     if st.button("Word Cloud"):
         st.session_state.current_page = "word_cloud"
 
+    # --- Time Window Selection ---
+    st.markdown("---")
+    st.subheader("🕒 Time Window")
+
+    # Reminder for users
+    st.caption("📌 **Note:** This app currently supports fetching news only from **2025-01-01** onward. Start date will be restricted accordingly.")
+
     time_window_options = ["Last 7 days", "Last 30 days", "Last 90 days", "Custom"]
     selected_window = st.selectbox("Select time window", time_window_options)
 
-    # Initialize in session_state
     if "time_window" not in st.session_state:
         st.session_state.time_window = "Last 7 days"
-
     if "custom_start" not in st.session_state:
-        st.session_state.custom_start = datetime.today() - timedelta(days=7)
+        st.session_state.custom_start = datetime.today().date() - timedelta(days=7)
     if "custom_end" not in st.session_state:
-        st.session_state.custom_end = datetime.today()
+        st.session_state.custom_end = datetime.today().date()
 
-    # Show date inputs if custom selected
     if selected_window == "Custom":
-        start_date = st.date_input("Start date", st.session_state.custom_start)
-        end_date = st.date_input("End date", st.session_state.custom_end)
+        st.session_state.time_window = "Custom"
 
-        # Save to session state
+        start_date = st.date_input(
+            "Start date",
+            value=st.session_state.custom_start,
+            min_value=datetime(2025, 1, 1).date(),
+            key="custom_start_picker"
+        )
+        end_date = st.date_input(
+            "End date",
+            value=st.session_state.custom_end,
+            min_value=datetime(2025, 1, 1).date(),
+            key="custom_end_picker"
+        )
+
         if start_date != st.session_state.custom_start:
             st.session_state.custom_start = start_date
-            st.session_state.df = pd.DataFrame()  # trigger update
+            st.session_state.df = pd.DataFrame()
 
         if end_date != st.session_state.custom_end:
             st.session_state.custom_end = end_date
-            st.session_state.df = pd.DataFrame()  # trigger update
+            st.session_state.df = pd.DataFrame()
+
     else:
         if selected_window != st.session_state.time_window:
             st.session_state.time_window = selected_window
-            st.session_state.df = pd.DataFrame()  # trigger update
+            st.session_state.df = pd.DataFrame()
+
+
 
 # --- Main Page Logic ---
 if st.session_state.current_page == "home":
